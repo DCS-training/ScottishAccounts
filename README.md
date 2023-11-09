@@ -9,7 +9,7 @@ The repository contains both the code and the material you are going to need to 
 2. Login with your EASE credentials
 3. Select RStudio as a personal notebook server and press start
 4. Go to File >New Project>Version Control>Git
-5. Copy and Paste this repository URL [https://github.com/DCS-training/PCA-2023](https://github.com/DCS-training/ScottishAccounts/) as the Repository URL
+5. Copy and Paste this repository URL [https://github.com/DCS-training/ScottishAccounts](https://github.com/DCS-training/ScottishAccounts/) as the Repository URL
 6. The Project directory name will filled in automatically but you can change it if you want your folder in Notable to have a different name
 7. Decide where to locate the folder. By default, it will locate it in your home directory 
 8. Press Create Project
