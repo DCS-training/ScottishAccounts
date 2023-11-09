@@ -4,6 +4,7 @@ install.packages(c("tmap","ggspatial","quanteda.textplots", "quanteda.textmodels
 # Load required libraries
 library(tm)
 library(wordcloud)
+library(here)
 library(quanteda.textplots)
 library(quanteda.textmodels)
 library(quanteda)
