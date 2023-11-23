@@ -1,19 +1,18 @@
 # Set Up ####################
 
 ## Install Package Not in Noteable ==================
-install.packages(c("tmap","ggspatial","quanteda.textplots", "quanteda.textmodels", "wordcloud"))
+install.packages(c("quanteda.textplots", "quanteda.textmodels", "wordcloud"))
 
 ## Load required libraries ========================
 library(tm)
+library(sp)
+library(rgdal)
 library(wordcloud)
 library(quanteda.textplots)
 library(quanteda.textmodels)
 library(quanteda)
 library(here)
-library(sf)
 library(tidyverse)
-library(ggspatial)
-library(tmap)
 library(data.table)
 
 # Step 1: Prepare the Data set ########
@@ -211,29 +210,29 @@ IlnessGroup<-Parish %>%
 # Subset only the one containing mentions
 IlnessMentions<-subset(IlnessGroup, Ilness=="yes")
 
-# Add the exported data into a geopackage with GIS
 # Read Data
-ParishesGeo <- st_read(
-  dsn = here("Spatial/Area_Scotland.gpkg"))
+ParishesGeo <- readOGR(dsn = here("Spatial/Area_Scotland.gpkg"))
 
 #Merge the two dataset
 MergedGeo <-merge(ParishesGeo,IlnessMentions, by.x="name", by.y="Area",all.x = TRUE)# nb this is left join cause I want to preserve all the records present in ParishGeo
 
-# Plot 
-MergedGeo %>% # pipe data to
-  ggplot() +# a ggplot function
-  geom_sf(# precise that it will be a spatial geometry
-    aes(# provide some aesthetics
-      geometry = geometry,# the geometry column (usually auto detected)
-      fill = NReportsI)# we want the polygon color to change following the count
-  )  +
-  scale_fill_gradientn(colours=c("white", "red"),guide = guide_legend(title = "Ilness Report"))
+# Create a continuous color palette
+color.palette <- colorRampPalette(c("white", "red"))
+
+# Plot using spplot
+spplot(MergedGeo,
+       "NReportsI",
+       col.regions = color.palette(100),
+       main = "Ilness Report",
+       key.space = "right",
+       sp.layout = list("sp.polygons", MergedGeo, col = "black", pch = 19),
+       scales = list(draw = TRUE))
 
 
 ## 7.2 Now with Witches ============
 
 # Where can we find more mentions of weather related events
-#Check for keywords and add them to the data dataset
+#Check for keywords and add them to the data data set
 Parish$witches<- ifelse(grepl("witch|spell|witches|enchantemt|magic", Parish$text, ignore.case = T), "yes","no")
 
 # Group by meteo and area
@@ -244,19 +243,20 @@ WitchGroup<-Parish %>%
 # Subset only the one containing mentions
 witchMentions<-subset(WitchGroup, witches=="yes")
 
-# Merge the two dataset
-MergedGeo2 <-merge(MergedGeo,witchMentions, by.x="name", by.y="Area",all.x = TRUE)
+#Merge the two dataset
+MergedGeo2 <-merge(MergedGeo,witchMentions, by.x="name", by.y="Area",all.x = TRUE)# nb this is left join cause I want to preserve all the records present in ParishGeo
 
-# Plot 
-MergedGeo2 %>% # pipe data to
-  ggplot() +# a ggplot function
-  geom_sf(# precise that it will be a spatial geometry
-    aes(# provide some aesthetics
-      geometry = geometry,# the geometry column (usually auto detected)
-      fill = NReportsW)# we want the polygon color to change following the count
-  )  +
-  scale_fill_gradientn(colours=c("white", "purple"),guide = guide_legend(title = "witches"))
+# Create a continuous color palette
+color.palette2 <- colorRampPalette(c("white", "purple"))
+
+# Plot using spplot
+spplot(MergedGeo2,
+       "NReportsW",
+       col.regions = color.palette2(100),
+       main = "Witches Report",
+       key.space = "right",
+       sp.layout = list("sp.polygons", MergedGeo, col = "black", pch = 19),
+       scales = list(draw = TRUE))
 
 ####THE END######
 
-    
