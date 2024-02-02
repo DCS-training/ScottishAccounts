@@ -3,6 +3,7 @@
 ## Install Package Not in Noteable ==================
 install.packages(c("quanteda.textplots", "quanteda.textmodels", "wordcloud"))
 
+
 ## Load required libraries ========================
 library(tm)
 library(sp)
@@ -37,6 +38,8 @@ for (file in text_files) {
 # Save the raw data frame as a CSV file. We do that for future reference 
 write.csv(Scotdata, "text_data.csv", row.names = FALSE)
 
+library(tidyverse)
+Scotdata<-read_csv("text_data.csv")
 # Step 2: Doing some cleaning and wrangling #########
 ## 2.1 Fix some formatting issues ============
 # Fix the going to the next line issue. i.e. sub "- " with nothing ""
@@ -171,6 +174,12 @@ tree<-kwic(Report_tokens , #on what
            valuetype = "regex",# use Regex to do so
            window = 10)
 
+
+slave<-kwic(Report_tokens , #on what
+           c("slave", "cotton", "sugar"), # Regex pattern
+           valuetype = "regex",# use Regex to do so
+           window = 10)
+
 # Add them back to our main data set 
 TokenScotland<-rownames_to_column(TokenScotland, var = "ID")
 
@@ -202,19 +211,25 @@ ggplot(BreakoutGreen, aes(x=Area, y=NMention, colour=pattern))+ # Select data se
 # Check for keywords and add them to the data dataset
 Parish$Ilness<- ifelse(grepl("ill|ilness|sick|cholera", Parish$text, ignore.case = T), "yes","no")
 
+Parish$Slave<- ifelse(grepl("slave|sugar|cotton", Parish$text, ignore.case = T), "yes","no")
+
+
 # Group by Ilness and area
-IlnessGroup<-Parish %>%
-  group_by(Area,Ilness)%>%
-  summarize(NReportsI=n())
+IlnessGroup <- Parish %>%
+  group_by(Area) %>%
+  summarise(Total = n(), count = sum(Ilness == "yes")) %>%
+  mutate(per = round(100 * count / Total, 2))
 
-# Subset only the one containing mentions
-IlnessMentions<-subset(IlnessGroup, Ilness=="yes")
-
+install.packages("sf")
+library(sf)
+install.packages("tmap")
+library(tmap)
 # Read Data
-ParishesGeo <- readOGR(dsn = here("Spatial/Area_Scotland.gpkg"))
+ParishesGeo <- st_read("Spatial/Parishes.gpkg")
+ParishesGeo <- readOGR(dsn = here("Spatial/Parishes.gpkg"))
 
 #Merge the two dataset
-MergedGeo <-merge(ParishesGeo,IlnessMentions, by.x="name", by.y="Area",all.x = TRUE)# nb this is left join cause I want to preserve all the records present in ParishGeo
+MergedGeo <-merge(ParishesGeo,IlnessGroup, by.x="JOIN_NAME_", by.y="Area",all.x = TRUE)# nb this is left join cause I want to preserve all the records present in ParishGeo
 
 # Create a continuous color palette
 color.palette <- colorRampPalette(c("white", "red"))
@@ -236,9 +251,14 @@ spplot(MergedGeo,
 Parish$witches<- ifelse(grepl("witch|spell|witches|enchantemt|magic", Parish$text, ignore.case = T), "yes","no")
 
 # Group by meteo and area
-WitchGroup<-Parish %>%
-  group_by(Area,witches)%>%
-  summarize(NReportsW=n())
+WitchGroup <- Parish %>%
+  group_by(Area) %>%
+  summarise(Total = n(), count = sum(witches == "yes")) %>%
+  mutate(per = round(100 * count / Total, 2))
+
+#WitchGroup<-Parish %>%
+ # group_by(Area,witches)%>%
+  #summarize(NReportsW=n())
 
 # Subset only the one containing mentions
 witchMentions<-subset(WitchGroup, witches=="yes")
