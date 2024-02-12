@@ -152,37 +152,20 @@ Report_tokens <- tokens_select(Report_tokens, min_nchar = 3)
 #Remove stop words
 Report_tokens <-tokens_remove(Report_tokens, c(stopwords("english"), "statistical", "account", "parish", "one", "years"))
 
-# 5 Visualise the Results ##################
-# Convert to document-feature matrix (aka "dfm")
-dfm_Report <- dfm(Report_tokens)
 
-# Plot a wordcloud
-textplot_wordcloud(dfm_Report,
-                   max_words=100,
-                   color='black')
+# 5 Working with Geographical Data #################
 
-# Improving the WordCloud
-textplot_wordcloud(dfm_Report, rotation = 0.25,
-                   max_words=50,
-                   color = rev(RColorBrewer::brewer.pal(10, "Spectral")))#adding some colour and rotate results
-
-# 8 Working with Geographical Data #################
-
-## 7.1 Where can we find more mentions of ilness related events =====
+## 5.1 Where can we find more mentions of ilness related events =====
 # Check for keywords and add them to the data dataset
 Parish$Ilness<- ifelse(grepl("ill|ilness|sick|cholera", Parish$text, ignore.case = T), "yes","no")
 
-Parish$Slave<- ifelse(grepl("slave|sugar|cotton", Parish$text, ignore.case = T), "yes","no")
-
-
-# Group by Ilness and area
+# Group by Ilness and geographical area
 IlnessGroup <- Parish %>%
   group_by(Area) %>%
   summarise(Total = n(), count = sum(Ilness == "yes")) %>%
-  mutate(per = round(100 * count / Total, 2))
+  mutate(per = round(count/Total, 2))
 
-# Read Data
-ParishesGeo <- st_read("Spatial/Parishes.gpkg")
+# Read Geographical Data (geopackage)
 ParishesGeo <- readOGR(dsn = here("Spatial/Parishes.gpkg"))
 
 #Merge the two dataset
@@ -193,7 +176,7 @@ color.palette <- colorRampPalette(c("white", "red"))
 
 # Plot using spplot
 spplot(MergedGeo,
-       "NReportsI",
+       "per",
        col.regions = color.palette(100),
        main = "Ilness Report",
        key.space = "right",
@@ -201,36 +184,31 @@ spplot(MergedGeo,
        scales = list(draw = TRUE))
 
 
-## 7.2 Now with Witches ============
+## 5.2 Now with Witches ============
 
 # Where can we find more mentions of weather related events
 #Check for keywords and add them to the data data set
+
 Parish$witches<- ifelse(grepl("witch|spell|witches|enchantemt|magic", Parish$text, ignore.case = T), "yes","no")
 
-# Group by meteo and area
+# Group by witch and area
 WitchGroup <- Parish %>%
   group_by(Area) %>%
   summarise(Total = n(), count = sum(witches == "yes")) %>%
-  mutate(per = round(100 * count / Total, 2))
+  mutate(per = round(count / Total, 2))
 
-#WitchGroup<-Parish %>%
-# group_by(Area,witches)%>%
-#summarize(NReportsW=n())
-
-# Subset only the one containing mentions
-witchMentions<-subset(WitchGroup, witches=="yes")
 
 #Merge the two dataset
-MergedGeo2 <-merge(MergedGeo,witchMentions, by.x="name", by.y="Area",all.x = TRUE)# nb this is left join cause I want to preserve all the records present in ParishGeo
+MergedGeo2 <-merge(ParishesGeo,WitchGroup, by.x="JOIN_NAME_", by.y="Area",all.x = TRUE)# nb this is left join cause I want to preserve all the records present in ParishGeo
 
 # Create a continuous color palette
 color.palette2 <- colorRampPalette(c("white", "purple"))
 
 # Plot using spplot
 spplot(MergedGeo2,
-       "NReportsW",
+       "per",
        col.regions = color.palette2(100),
-       main = "Witches Report",
+       main = "Witches Reports",
        key.space = "right",
        sp.layout = list("sp.polygons", MergedGeo, col = "black", pch = 19),
        scales = list(draw = TRUE))
