@@ -1,0 +1,336 @@
+---
+title: "Statistical Account of Scotland Analysis"
+subtitle: "HCA Deep Dive"
+author: "Lucia Michelin"
+date: "14/02/2024"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning= FALSE, message = FALSE, results=FALSE)
+library(tm)
+library(sp)
+library(rgdal)
+library(quanteda)
+library(here)
+library(tidyverse)
+library(data.table)
+```
+
+# Introduction
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r,results=FALSE,fig.show='hide'}
+plot(cars)
+```
+Ok that is a standard dataset that does not mean much. The mtcars dataset is a built-in dataset in R that contains measurements on 11 different attributes for 32 different cars. 
+
+So let's see some thinking more interesting!
+
+# Our Dataset
+
+The Statistical Accounts of Scotland are a series of documentary publications, related in subject matter though published at different times, covering life in Scotland in the 18th and 19th.
+
+The Old (or First) Statistical Account of Scotland was published between 1791 and 1799 by Sir John Sinclair of Ulbster. The New (or Second) Statistical Account of Scotland published under the auspices of the General Assembly of the Church of Scotland between 1834 and 1845. These first two Statistical Accounts of Scotland are unique records of life during the agricultural and industrial revolutions in Europe.
+
+## Structure of the dataset 
+
+The original publication has been scanned and OCRed and each single record has been collected in a .txt file. The name of each file contain information about the document itself. For example StAS.2.15.91.P.Orkney.Cross_and_Burness
+
+ - StAs.2.15.91 -> Second Statistical Account
+ - P -> Parish (Contain information from the Parish)
+ - Orkney -> Area of interest (Scotland has been divided in 33 Areas)
+ - Cross_and_Burness -> Parish 
+
+We are going to see how to use this to extract information about all our text later but the first thing we need to do is to create a single dataframe (table) that will contain all the texts otherwise it will be very difficult to manage the data. 
+
+## Prepare the dataset
+
+All our .txt files are in a directory named Account so I can write a function that will loop through each of the files extract the text and the tile of each file and put them all in a table. 
+Doing it manually would take a ridiculous amount of time but that is what computer are for so let's see what we can do. 
+
+1. Create a new object that contain the path to our directory  
+```{r,results=FALSE}
+text_files_dir <- "Accounts"
+```
+2. Create an empty data.table that we are going to populate with the info we are going to extract
+```{r,results=FALSE}
+text_files <- list.files(text_files_dir, pattern = "\\.txt$", full.names = TRUE)#search for .txt
+
+Scotdata <- data.table(title = character(), text = character())# create a table with two column one named title and one text
+```
+3. Iterate through each text file We do this by using a forloop function
+```{r,results=FALSE}
+for (file in text_files) {
+  # Specify the encoding (e.g., "latin1")
+  text <- tolower(iconv(readLines(file, warn = FALSE), from = "latin1", to = "UTF-8", sub = ""))# tolower gets all text low cap 
+  title <- gsub(".txt$", "", basename(file))# gsub extracts the pattern define so the tile of the files before .txt
+  Scotdata <- rbindlist(list(Scotdata, data.table(title = title, text = paste(text, collapse = " "))))# bind them together
+}
+```
+4. look at the first 5 row of our file and save the table as a .csv so I do not have to do it every single time
+```{r,results=FALSE}
+head(Scotdata)
+write.csv(Scotdata, "text_data.csv", row.names = FALSE)
+```
+## Clean and format the data
+
+### Fix some formatting issues
+
+Fix the going to the next line issue. i.e. sub "- " with nothing ""
+There are a lot of formatting errors (next line, next paragraph) that we want to clean up
+```{r,results=FALSE}
+ScotdataClean <- mutate_if(Scotdata, 
+                           is.character, #apply the changes only if the data is a "character" type (e.g. text)
+                           str_replace_all, 
+                           pattern = "-[[:space:]]+","") #What I am searching for+ what I am subbing with 
+```
+### Extract More info from the dataset 
+To do the following steps we are using regex. Short for regular expression, a regex is a string of text that lets you create patterns that help match, locate, and manage text.
+Think find and replace in Word
+
+1. Extract area and parish from the title
+- P=Parish
+- C=Miscellanea
+- G=General Observations
+- A=Appendix
+- F=General
+- I=Index
+- M=Map
+
+I want to be able to subset the dataset by those and I also want to have them both as a code as a description to do so I need to write a if else clause
+```{r,results=FALSE}
+ScotdataClean$Type<- sub(".*(P|C|G|A|F|M|I)\\.(.*?)\\..*", "\\1", ScotdataClean$title)#This is selecting the P|C|G|A|F|M|I
+ScotdataClean$TypeDescriptive<- ifelse(
+  ScotdataClean$Type =="P", "Parish",ifelse(
+    ScotdataClean$Type =="C","Miscellanea", ifelse(
+      ScotdataClean$Type =="G","General Observations", ifelse(
+        ScotdataClean$Type =="A", "Appendix", ifelse(
+          ScotdataClean$Type =="F","General", ifelse(
+            ScotdataClean$Type =="I", "Index","Map"))))))
+```
+2. I want the first bit of the title as the RecordId of the document
+```{r,results=FALSE}
+ScotdataClean$RecordID<- sub("^(StAS\\.\\d+\\.\\d+\\.\\d+).*","\\1",  ScotdataClean$title)
+```
+3. I also want to extract the area that is the bit after p/c/g/a/f/m/i
+```{r,results=FALSE}
+ScotdataClean$Area<- sub(".*(P|C|G|A|F|M|I)\\.(.*?)\\..*", "\\2", ScotdataClean$title)# //2 cause I want to select the second bit so after the letters
+```
+4. Extract the Parish. I can do so by extracting the last bit up until the full stop
+```{r,results=FALSE}
+ScotdataClean$Parish<- sub(".*\\.", "", ScotdataClean$title)
+```
+5. Extract dates from the text 
+I know all dates are cluster of 4 numbers starting with 1 (there are no recent dates)
+```{r,results=FALSE}
+ScotdataClean$Year<-sapply(str_extract_all(ScotdataClean$text, "\\b1[1-9]{3}\\b"), function(matches) {
+  if (length(matches) > 0) {
+    paste(matches, collapse = ", ")
+  } else {
+    NA
+  }
+})
+```
+6. Extract tables form text 
+Extract all text between <table> and </table>
+```{r,results=FALSE}
+ScotdataClean$Tables <- str_match(ScotdataClean$text, "<table>(.*?)</table>")[, 2]
+```
+
+### Subset the dataset to only keep the text with information from the parishes
+
+We will now start to look at what is inside but before starting our analysis we want to work only on the parish observations since a lot of the other documents are part of indexes or summaries
+```{r,results=FALSE}
+Parish<-subset(ScotdataClean, Type =="P")
+```
+
+# Explore the dataset created
+
+Create a Quanteda corpus of the 'text' column from our data set
+A corpus class object containing the original texts, document-level variables, document-level metadata, corpus-level metadata, and default settings for subsequent processing of the corpus. For quanteda >= 2.0, this is a specially classed character vector.
+```{r,results=FALSE}
+CorpusStat<-corpus(Parish$text)
+```
+## Summarise the content of the corpus 
+
+Print doc in position 5 of the corpus
+```{r,results=FALSE}
+summary(CorpusStat, 5)
+```
+Check how many docs are in the corpus
+```{r,results=FALSE}
+ndoc(CorpusStat) 
+```
+Check number of characters in the first 10 documents of the corpus
+```{r,results=FALSE}
+nchar(CorpusStat[1:10])
+```
+Check number of tokens in the first 10 documents
+```{r,results=FALSE}
+ntoken(CorpusStat[1:10]) 
+```
+
+## Visualise this information
+
+1. Create a new vector with tokens for all articles and store the vector as a new data frame with four columns (Tokens, title, Area, Parish)
+```{r,results=FALSE}
+NtokenStats<-as.vector(ntoken(CorpusStat))
+TokenScotland <-data.frame(Tokens=NtokenStats, title=Parish$title, Area=Parish$Area, Parish=Parish$Parish)
+```
+2. Now we want to see how much material we have for each area. We can do that through a Pipe.
+
+R pipes are a way to chain multiple operations together in a concise and expressive way. 
+They are represented by the %>% operator, which takes the output of the expression on its left and passes it as the first argument to the function on its right. Using pipes in R allows us to link a sequence of analysis steps.
+
+
+```{r,results=FALSE}
+BreakoutScotland<- TokenScotland %>%
+  group_by(Area)%>%
+  summarize(NReports=n(), # count n report 
+            MeanTokens=round(mean(Tokens)))# mean of n of token per area
+```
+3. Plot the results
+
+Now we can plot the trends. This is done through the use of the ggplot package that is a very handy package that will allow you to print a very big variety of graphs
+
+```{r,results=FALSE, echo=TRUE,fig.height =7, fig.width = 14,,fig.show='hide'}
+ggplot(BreakoutScotland, aes(x=Area, y=NReports))+ # Select data set and coordinates we are going to plot
+  geom_point(aes(size=MeanTokens, fill=MeanTokens),shape=21, stroke=1.5, alpha=0.9, colour="black")+ # Which graph I want 
+  labs(x = "Areas", y = "Number of Reports", fill = "Mean of Tokens", size="Mean of Tokens", title="Number of Reports and Tokens in the Scotland Archive")+ # Rename labs and title
+  scale_size_continuous(range = c(5, 15))+ # Resize the dots to be bigger
+  geom_text(aes(label=MeanTokens))+ # Add the mean of tokens in the dots
+  scale_fill_viridis_c(option = "plasma")+ # Change the colour coding
+  theme_bw()+ # B/W Background
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1), legend.position = "bottom")+ # Rotate labels of x and move them slightly down. Plus move the position to the bottom 
+  guides(size = "none") # Remove the Size from the Legend 
+
+```
+
+# Getting the data ready for text analysis
+
+1. Tokenise
+Now, we can tokenise the corpus, which will break the textual data into separate words grouped by document. We are also removing symbols, URLs, and punctuation.
+```{r,results=FALSE}
+Report_tokens <- quanteda::tokens(Parish$text, 
+                                  remove_symbols=TRUE, 
+                                  remove_url=TRUE, 
+                                  remove_punct=TRUE,
+                                  remove_numbers = FALSE,
+                                  split_hyphens = TRUE)
+```
+
+2. Check details
+Take a look at our tokens list by printing the second document:
+```{r,results=FALSE}
+Report_tokens[2]
+```
+
+3. Remove short words
+Remove tokens under 3 characters. (Shorter words won't tell us much about our data, and because we removed punctuation, we want to get rid of the truncated contractions--e.g. I'm -->'I', 'm')
+```{r,results=FALSE}
+Report_tokens <- tokens_select(Report_tokens, min_nchar = 3)
+```
+
+4. Remove stop words
+
+Stop words are a set of commonly used words in a language. Examples of stop words in English are “a,” “the,” “is,” “are,” etc. Stop words are commonly used in Text Mining and Natural Language Processing (NLP) to eliminate words that are so widely used that they carry very little useful information
+Report_tokens <-tokens_remove(Report_tokens, c(stopwords("english"), "statistical", "account", "parish", "one", "years"))
+
+```{r,results=FALSE}
+Report_tokens <-tokens_remove(Report_tokens, c(stopwords("english"), "statistical", "account", "parish", "one", "years"))
+```
+
+# Working with Geographical Data 
+
+Since our data are all connected with places in Scotland we can look at topics within our dataset and how popular they are in different areas of Scotland. 
+
+To do so we need to work with a geoPackage containing the same information about the areas of Scotland contained in the dataset. GeoPackage is an open, portable, self-describing, compact format for transferring geo-spatial information. In our case it is a vectorial representation of the areas of Scotland in which the accounts are subdivided.
+
+## Ilness mentions
+
+For our first example we are going to look at mentions of ilness-related terminology across Scotland. 
+
+1. Check for keywords and add them to the data dataset
+```{r,results=FALSE}
+Parish$Ilness<- ifelse(grepl("ill|ilness|sick|cholera", Parish$text, ignore.case = T), "yes","no")
+```
+
+2. Group by the Ilness column and geographical area
+
+Because, as we have seen earlier the number of records collected for each area is very different we are going to use a proportion rather than just the number of occurrences of ilness-related words.
+```{r,results=FALSE}
+IlnessGroup <- Parish %>%
+  group_by(Area) %>%
+  summarise(Total = n(), count = sum(Ilness == "yes")) %>%
+  mutate(per = round(count/Total, 2))# calculate every how many
+```
+3. Read Geographical Data (geopackage)
+```{r,results=FALSE}
+ParishesGeo <- readOGR(dsn = here("Spatial/Parishes.gpkg"))
+```
+4. Merge the two dataset
+```{r,results=FALSE}
+MergedGeo <-merge(ParishesGeo,IlnessGroup, by.x="JOIN_NAME_", by.y="Area",all.x = TRUE)# nb this is left join cause I want to preserve all the records present in ParishGeo
+```
+5. Create a continuous color palette
+```{r,results=FALSE}
+color.palette <- colorRampPalette(c("white", "red"))
+```
+
+6. Plot using spplot
+```{r,results=FALSE,fig.show='hide'}
+spplot(MergedGeo,
+       "per",
+       col.regions = color.palette(100),
+       main = "Ilness Report",
+       key.space = "right",
+       sp.layout = list("sp.polygons", MergedGeo, col = "black", pch = 19),
+       scales = list(draw = TRUE))
+```
+
+## Witches Mentions
+
+Where can we find more mentions of witches related facts.
+
+1. Check for keywords and add them to the data dataset
+```{r,results=FALSE}
+Parish$witches<- ifelse(grepl("witch|spell|witches|enchantemt|magic", Parish$text, ignore.case = T), "yes","no")
+```
+
+2. Group by the witches column and geographical area
+```{r,results=FALSE}
+WitchGroup <- Parish %>%
+  group_by(Area) %>%
+  summarise(Total = n(), count = sum(witches == "yes")) %>%
+  mutate(per = round(count / Total, 2))
+```
+
+3. Merge the two dataset
+```{r,results=FALSE}
+MergedGeo2 <-merge(ParishesGeo,WitchGroup, by.x="JOIN_NAME_", by.y="Area",all.x = TRUE)# nb this is left join cause I want to preserve all the records present in ParishGeo
+```
+
+4. Create a continuous color palette
+```{r,results=FALSE}
+color.palette2 <- colorRampPalette(c("white", "purple"))
+```
+
+5. Plot using spplot
+```{r,results=FALSE,fig.show='hide'}
+spplot(MergedGeo2,
+       "per",
+       col.regions = color.palette2(100),
+       main = "Witches Reports",
+       key.space = "right",
+       sp.layout = list("sp.polygons", MergedGeo, col = "black", pch = 19),
+       scales = list(draw = TRUE))
+```
+
+# THE END
+
+

@@ -1,16 +1,9 @@
 # Set Up ####################
 
-## Install Package Not in Noteable ==================
-install.packages(c("quanteda.textplots", "quanteda.textmodels", "wordcloud"))
-
-
 ## Load required libraries ========================
 library(tm)
 library(sp)
 library(rgdal)
-library(wordcloud)
-library(quanteda.textplots)
-library(quanteda.textmodels)
 library(quanteda)
 library(here)
 library(tidyverse)
@@ -39,7 +32,7 @@ for (file in text_files) {
 write.csv(Scotdata, "text_data.csv", row.names = FALSE)
 
 
-#Scotdata<-read_csv("text_data.csv")
+
 # Step 2: Doing some cleaning and wrangling #########
 ## 2.1 Fix some formatting issues ============
 # Fix the going to the next line issue. i.e. sub "- " with nothing ""
@@ -186,7 +179,7 @@ spplot(MergedGeo,
 
 ## 5.2 Now with Witches ============
 
-# Where can we find more mentions of weather related events
+# Where can we find more mentions of witches related events
 #Check for keywords and add them to the data data set
 
 Parish$witches<- ifelse(grepl("witch|spell|witches|enchantemt|magic", Parish$text, ignore.case = T), "yes","no")
